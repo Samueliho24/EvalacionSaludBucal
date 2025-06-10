@@ -59,7 +59,7 @@ class Handler {
 	}
 	public void updateCount() {
 		try {
-			Cursor cursor = db.rawQuery("select count(*) from formularios where exportado = 0", new String[] {});
+			Cursor cursor = db.rawQuery("select count(*) from formularios", new String[] {});
 			cursor.moveToNext();
 			variables.put("count", cursor.getString(0));
 		} catch(Exception e) {
@@ -69,7 +69,7 @@ class Handler {
 	@JavascriptInterface
 	public void export() {
 		try {
-			URL url = new URL("http://" + getvar("ip") + ":8080/recieverData");
+			URL url = new URL("http://" + decryptIP(getvar("code")) + ":8080/recieverData");
 			HttpURLConnection http = (HttpURLConnection) url.openConnection();
 			http.setRequestMethod("POST");
 			http.setRequestProperty("Content-Type", "application/json");
@@ -105,7 +105,8 @@ class Handler {
 		}
 		activity.runOnUiThread(() -> Toast.makeText(activity, "Los datos fueron exportados exitosamente", Toast.LENGTH_LONG).show());
 		db.execSQL("delete from formularios");
-		updateCount();
+		setvar("count", "0");
+		activity.runOnUiThread(() -> web.loadUrl("file:///android_asset/welcome.html"));
 	}
 	@JavascriptInterface
 	public void log(String msg) {
@@ -142,6 +143,22 @@ class Handler {
 		db.endTransaction();
 		return true;
 	}
+
+	public static final long SECRET_KEY = 0xA23A23D;
+	// Cifrado 
+	// Descifrado
+	public static String decryptIP(String code){
+		if (code.length() == 0)
+			return "";
+		//Convertir codigo de String a Long
+		long encrypt = Long.parseLong(code,36);
+		long ipInt = encrypt^SECRET_KEY;
+		//Convertir ip Long en String
+		String ip =((ipInt >> 24) & 0xFF) + "." + ((ipInt >> 16) & 0xFF) + "." + ((ipInt >> 8) & 0xFF) + "." + (ipInt & 0xFF);
+
+		return ip;
+	}
+	
 	@JavascriptInterface
 	public void post(String method, String json) {
 		HashMap<String, String> form = null;
@@ -192,9 +209,9 @@ class Handler {
 			}
 			else if(method.equals("config")) {
 				mutate("configuracion", form, "update");
-				setvar("ip", form.get("ip"));
+				setvar("code", form.get("code"));
 				activity.runOnUiThread(() -> Toast.makeText(activity, "Se ha ingresado exitosamente la configuración.", Toast.LENGTH_LONG).show());
-				Main.updateUsers(getvar("ip"), activity, db);
+				Main.updateUsers(decryptIP(getvar("code")), activity, db);
 				activity.runOnUiThread(() -> web.loadUrl("file:///android_asset/login.html"));
 			}
 		} catch (Exception e) {
@@ -285,10 +302,10 @@ public class Main extends Activity {
 		
 		Handler handler = new Handler(this, web, db);
 		// Setup IP
-		Cursor cursor = db.rawQuery("select ip from configuracion", new String[] {});
+		Cursor cursor = db.rawQuery("select code from configuracion", new String[] {});
 		cursor.moveToNext();
-		handler.setvar("ip", cursor.getString(0));
-		Thread sync = new Thread(() -> updateUsers(handler.getvar("ip"), this, db));
+		handler.setvar("code", cursor.getString(0));
+		Thread sync = new Thread(() -> updateUsers(Handler.decryptIP(handler.getvar("code")), this, db));
 		sync.start();
 
 
